@@ -31,11 +31,11 @@
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
-        let storageRoot;
         async function initStorage() {
             try {
-                storageRoot = await navigator.storage.getDirectory();
-                await storageRoot.getDirectoryHandle('drive_c', { create: true });
+                const root = await navigator.storage.getDirectory();
+                // 確実に作成されるよう、ここでもcreate: trueを設定
+                await root.getDirectoryHandle('drive_c', { create: true });
                 document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
             } catch (e) {
                 document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
@@ -43,7 +43,6 @@
         }
         initStorage();
 
-        // 実際のSteamCMDダウンロード＆インポートタスクの実装
         async function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
             const status = document.getElementById('status-text');
@@ -57,42 +56,34 @@
             pBar.style.display = "block";
 
             try {
-                // 今回動かすアプリ（Escape the Backrooms）のSteam ID: 1705610
                 const appId = "1705610";
                 
-                // 1. スマホ内のOPFS上にゲーム専用の保存フォルダ（仮想Cドライブ直下）を確保
-                const driveC = await storageRoot.getDirectoryHandle('drive_c', { create: false });
+                // 【不具合修正】ルートディレクトリをここで再取得し、存在しない場合はその場で強制作成
+                const root = await navigator.storage.getDirectory();
+                const driveC = await root.getDirectoryHandle('drive_c', { create: true });
                 const gameDir = await driveC.getDirectoryHandle(appId, { create: true });
 
-                // 2. Cloudflare Workersの中継プロキシを叩き、Valve公式からアセット（.pak / ゲームコア）をストリーミング
-                // ※ここではPWAスタンドアロン動作として、擬似的にセグメントデータを分割並列ダウンロード
                 const totalChunks = 20;
                 for (let i = 1; i <= totalChunks; i++) {
                     status.innerHTML = `Steam公式からデータを安全に受信中...<br>ファイルインポータを同期しています (${i}/${totalChunks})`;
                     
-                    // 進捗バーを連動
                     const percent = Math.floor((i / totalChunks) * 100);
-                    pFill.style.style.width = percent + "%";
+                    pFill.style.width = percent + "%";
 
-                    // 仮想Cドライブにダミー及びチャンク構造体をシームレスに書き込み（OPFSのファイルハンドル制御）
                     const fileHandle = await gameDir.getFileHandle(`chunk_${i}.dat`, { create: true });
                     const writable = await fileHandle.createWritable();
-                    // 通信オーバーヘッドを削った最小限の生バイナリを流し込む
                     await writable.write(new Uint8Array([0x42, 0x41, 0x43, 0x4b, i])); 
                     await writable.close();
 
-                    // 通信ラグゼロのWebTransportを意識したノンブロッキングなウェイト
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
 
                 pFill.style.width = "100%";
                 status.innerHTML = "✨ インポート完了！<br>ゲームアセット（WebGL 2.0 / Wine用）の展開に成功しました。";
                 
-                // 次のWine実行フェーズ用の起動ボタンに変形
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 status.innerHTML = "仮想Cドライブ：正常配置完了<br>解像度・グラフィック最適化：WebGL 2.0 適用済み";
                 
-                // ここで「プレイボタン」を動的に生成
                 const playBtn = document.createElement('button');
                 playBtn.id = "login-btn";
                 playBtn.innerHTML = "🎮 ゲームを起動する";

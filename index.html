@@ -43,19 +43,16 @@
 
         function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
-            document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>ネットワーク土管（WebTransport）を接続しています...";
+            document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>システムメモリを確保しています...";
 
-            // 外部サイトではなく、自分のリポジトリに置いたファイルを直接読み込む（セキュリティ制限を突破）
             const script = document.createElement('script');
             script.src = "/libv86.js"; 
             script.onload = async () => {
                 try {
-                    const connectionUrl = `https://${window.location.hostname.replace('.pages.dev', '')}.workers.dev/rpc`;
-                    
-                    // 自分のドメインから安全にWasmをロード
+                    // スマホのブラウザでも確実に初期化できるようにメモリサイズを「512MB」へ調整（SteamCMDには十分）
                     emulator = new V86Starter({
                         wasm_path: "/v86.wasm", 
-                        memory_size: 2048 * 1024 * 1024,
+                        memory_size: 512 * 1024 * 1024, // 2GBから512MBへ軽量化
                         canvas: document.getElementById("screen"),
                         bios: { url: "https://copy.sh/v86/images/seabios.bin" },
                         vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
@@ -75,7 +72,8 @@
                         }
                     });
                 } catch(err) {
-                    document.getElementById('status-text').innerHTML = "エミュレータ内部の初期化に失敗しました。";
+                    // 詳細なエラーログをコンソールに残す設定
+                    document.getElementById('status-text').innerHTML = "エミュレータ内部の初期化に失敗しました。<br><small style='font-size:0.8rem;color:#ff4444;'>理由: " + err.message + "</small>";
                     console.error(err);
                 }
             };

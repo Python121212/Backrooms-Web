@@ -10,174 +10,76 @@
         #screen { width: 100vw; height: 100vh; display: none; position: absolute; top: 0; left: 0; z-index: 1; }
         #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: none; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; width: 80%; }
-        #login-btn, #play-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
-        #progress-bar { width: 100%; background-color: #2a475e; height: 10px; border-radius: 5px; margin-top: 15px; display: none; overflow: hidden; }
-        #progress-fill { width: 0%; height: 100%; background-color: #66c0f4; transition: width 0.3s ease; }
+        #play-btn { margin-top: 15px; padding: 12px 24px; background-color: #4caf50; color: #fff; border: 1px solid #81c784; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
         
-        /* 融合型SteamCMDターミナル UI */
-        #v86-terminal { position: absolute; bottom: 20px; left: 5%; width: 90%; height: 40%; background: rgba(0, 0, 0, 0.85); color: #00ff00; font-family: monospace; font-size: 0.8rem; padding: 10px; box-sizing: border-box; overflow-y: auto; white-space: pre-wrap; display: none; z-index: 5; border: 1px solid #555; border-radius: 5px; }
-        
-        /* Steamアカウント連携オーバーレイ */
-        #steam-panel { position: absolute; top: 10%; left: 5%; width: 90%; background: rgba(23, 26, 33, 0.95); border: 1px solid #66c0f4; border-radius: 5px; padding: 15px; box-sizing: border-box; z-index: 6; display: none; text-align: center; }
-        .steam-input { width: 80%; padding: 10px; margin: 8px 0; background: #2a475e; border: 1px solid #1b2838; color: #fff; border-radius: 3px; }
-        #steam-log-btn { background: #66c0f4; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; width: 85%; }
+        /* リアル仮想マシン・コンソール表示エリア */
+        #v86-terminal { position: absolute; bottom: 20px; left: 5%; width: 90%; height: 45%; background: #000; color: #00ff00; font-family: monospace; font-size: 0.75rem; padding: 10px; box-sizing: border-box; overflow-y: auto; white-space: pre-wrap; display: none; z-index: 5; border: 2px solid #333; }
     </style>
 </head>
 <body>
 
     <div id="loading">
-        <div id="status-text">Android 最適化環境 起動中...<br>OPFS 仮想Cドライブ接続中</div>
-        <button id="login-btn" onclick="startSteamInstall()">Steamアカウントでログインしてインポート</button>
-        <div id="progress-bar"><div id="progress-fill"></div></div>
+        <div id="status-text">本物エミュレーションインフラ準備完了</div>
+        <button id="play-btn" onclick="loadScriptAndBoot()">🚀 WebAssembly VM 物理起動</button>
     </div>
     
     <div id="v86-terminal"></div>
-
-    <div id="steam-panel">
-        <img src="https://store.cloudflare.steamstatic.com/public/shared/images/header/logo_steam.svg" width="120" style="margin-bottom: 10px;"><br>
-        <span style="font-size: 0.9rem; color: #c6d4df;">Escape the Backrooms ライセンス認証</span>
-        <input type="text" id="steam-user" class="steam-input" placeholder="Steam アカウント名">
-        <input type="password" id="steam-pass" class="steam-input" placeholder="パスワード">
-        <button id="steam-log-btn" onclick="executeSteamCMD()">SteamCMD 認証＆ゲーム実行</button>
-    </div>
 
     <canvas id="screen"></canvas>
     <div id="touch-overlay"></div>
 
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
-        }
-
-        let storageRoot;
-        async function initStorage() {
-            try {
-                storageRoot = await navigator.storage.getDirectory();
-                await storageRoot.getDirectoryHandle('drive_c', { create: true });
-                document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
-            } catch (e) {
-                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
-            }
-        }
-        initStorage();
-
-        async function startSteamInstall() {
-            document.getElementById('login-btn').style.display = "none";
-            const status = document.getElementById('status-text');
-            const pBar = document.getElementById('progress-bar');
-            const pFill = document.getElementById('progress-fill');
-
-            status.innerHTML = "Wasm仮想環境の初期化中...<br>Pages Functions内蔵APIへ接続中...";
-            pBar.style.display = "block";
-
-            try {
-                const workersUrl = "/steamcmd";
-                status.innerHTML = "Steam公式サーバーと同期中...<br>SteamCMDバイナリを受信しています...";
-                pFill.style.width = "30%";
-
-                const response = await fetch(workersUrl);
-                if (!response.ok) throw new Error("APIからのデータ取得に失敗しました。");
-                
-                pFill.style.width = "70%";
-                status.innerHTML = "SteamCMDを解凍中...<br>仮想Cドライブ（OPFS）へ安全に書き込んでいます...";
-
-                const blob = await response.blob();
-                const root = await navigator.storage.getDirectory();
-                const driveC = await root.getDirectoryHandle('drive_c', { create: true });
-                
-                const fileHandle = await driveC.getFileHandle("steamcmd.tar.gz", { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(blob);
-                await writable.close();
-
-                pFill.style.width = "100%";
-                status.innerHTML = "✨ SteamCMDの配置が完了しました！<br>Valve公式サーバーへのログインシーケンスへ移行可能です。";
-                pBar.style.display = "none";
-                
-                const playBtn = document.createElement('button');
-                playBtn.id = "play-btn";
-                playBtn.style.backgroundColor = "#4caf50";
-                playBtn.style.borderColor = "#81c784";
-                playBtn.innerHTML = "🎮 Steamアカウント連携・起動";
-                playBtn.onclick = () => loadScriptAndBoot();
-                document.getElementById('loading').appendChild(playBtn);
-
-            } catch (err) {
-                status.innerHTML = "Steam初期化中にエラーが発生しました。<br><small style='font-size:0.8rem;color:#ff4444;'>理由: " + err.message + "</small>";
-            }
+            navigator.serviceWorker.register('/service-worker.js');
         }
 
         function loadScriptAndBoot() {
-            const status = document.getElementById('status-text');
-            status.innerHTML = "エミュレータコア（libv86）を初期化中...";
-
+            document.getElementById('status-text').innerHTML = "libv86.js コアランタイムをロード中...";
             const script = document.createElement("script");
             script.src = "/libv86.js";
-            script.onload = () => { setTimeout(bootGameEngine, 500); };
-            script.onerror = () => { setTimeout(bootGameEngine, 500); };
+            script.onload = () => { bootRealV86Engine(); };
+            script.onerror = () => { alert("コアスクリプトのロードに失敗しました。"); };
             document.head.appendChild(script);
         }
 
-        async function bootGameEngine() {
+        // 🎯 公式が現在稼働させている安定版Linuxイメージを直接マウント
+        function bootRealV86Engine() {
             document.getElementById('loading').style.display = "none";
-            switchToGameCanvas();
-
-            document.getElementById('steam-panel').style.display = "block";
-            document.getElementById('v86-terminal').style.display = "block";
+            const terminal = document.getElementById('v86-terminal');
+            terminal.style.display = "block";
             
-            const terminal = document.getElementById('v86-terminal');
-            terminal.innerHTML = "SteamCMD API v1.0.0 Initialized.\nOPFS Drive C Mounted.\n[SYSTEM] WebAssembly memory64 addressing extension enabled.\n\n[INFO] Please input your Steam credentials to authorize 'Escape the Backrooms' license.\n";
-        }
+            terminal.innerHTML = "--- WebAssembly x86_64 Hardware Emulation Init ---\nConnecting to official image storage...\n";
 
-        // 🚀 memory64大容量アドレッシングモードを用いたフル実行ログシーケンス
-        function executeSteamCMD() {
-            const username = document.getElementById('steam-user').value || "anonymous";
-            const terminal = document.getElementById('v86-terminal');
-            document.getElementById('steam-panel').style.display = "none";
+            try {
+                // v86公式が運用しているテスト用LinuxのネットワークURLを直接指定
+                const emulator = new V86Starter({
+                    wasm_path: "/v86.wasm",
+                    memory_size: 64 * 1024 * 1024, // 軽量Linuxなので64MBで確実に駆動
+                    arguments: [
+                        "rw",
+                        "root=/dev/ram0",
+                        "init=/init",
+                        "console=ttyS0"
+                    ],
+                    // copy.shの最新リポジトリから確実に取得できるパス
+                    bzimage: { url: "https://copy.sh/v86/images/vmlinuz" }, 
+                    initrd: { url: "https://copy.sh/v86/images/initrd.img" },
+                    autostart: true
+                });
 
-            let logLines = [
-                `\nroot@backrooms-virtual-env:~# steamcmd +login ${username} ******* +quit`,
-                "Redirecting stderr to '/root/Steam/logs/stderr.txt'",
-                "Looking for updates...",
-                "Connecting to Valve Steam Server...",
-                `🔑 Authenticated with Steam Pipeline successfully as [${username}].`,
-                "Checking AppID 1705610 (Escape the Backrooms) license... OK.",
-                "[MEMORY64] Mapping 64-bit address space for asset streaming...",
-                "[MEMORY64] Allocated 4096MB virtual page heap inside WebAssembly Linear Memory.",
-                "📦 Downloading 'Escape the Backrooms' game data to virtual environment...",
-                " -> 24% [=========>                                   ]",
-                " -> 58% [======================>                      ]",
-                " -> 100% [============================================]",
-                "✨ Download and asset verification finished.",
-                "🚀 Booting Wine64 X11 Engine Pipeline...",
-                "Executing: EscapeTheBackrooms.exe -dx12 -screen-fullscreen -memory64",
-                "[WINE64] Initializing kernel32.dll & ntdll.dll in 64-bit container...",
-                "[WINE64] DirectX 12 API calls successfully translated to WebGPU/WebGL 2.0.",
-                "[ENGINE] Unreal Engine 5.1.0 Subsystem Active.",
-                "[ENGINE] Loading Shaders (0 / 412) - memory64 High Speed Streaming Mode Active.",
-                "[ENGINE] Loading Shaders (184 / 412)...",
-                "[ENGINE] Loading Shaders (412 / 412)... Done.",
-                "[GAME] Connecting to Escape the Backrooms Master Server...",
-                "🔑 Session ID generated. Handshake complete.",
-                "✨ Entering Main Menu Render Loop..."
-            ];
-
-            let currentLine = 0;
-            function printLog() {
-                if (currentLine < logLines.length) {
-                    terminal.innerHTML += logLines[currentLine] + "\n";
+                // 本物のCPUから送られてくる文字をそのまま画面に表示
+                emulator.add_listener("serial0-output-char", function(char) {
+                    terminal.innerHTML += char;
                     terminal.scrollTop = terminal.scrollHeight;
-                    currentLine++;
-                    // 大容量メモリモードの圧倒的スピード感を出すため、ログの間隔を少し高速化
-                    setTimeout(printLog, Math.random() * 120 + 50);
-                } else {
-                    setTimeout(() => {
-                        terminal.innerHTML += "\n[SUCCESS] Pipeline link established. Backrooms Web Engine is fully operational.\n";
-                        terminal.scrollTop = terminal.scrollHeight;
-                    }, 800);
-                }
+                });
+
+                setTimeout(() => {
+                    switchToGameCanvas();
+                }, 4000);
+
+            } catch (e) {
+                terminal.innerHTML += "\n[VM HARDWARE ERROR] " + e.message + "\n";
             }
-            printLog();
         }
 
         function switchToGameCanvas() {

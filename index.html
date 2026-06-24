@@ -52,19 +52,19 @@
             const pBar = document.getElementById('progress-bar');
             const pFill = document.getElementById('progress-fill');
 
-            status.innerHTML = "Wasm仮想環境の初期化中...<br>Cloudflare Workers中継サーバーへ接続中...";
+            status.innerHTML = "Wasm仮想環境の初期化中...<br>Pages Functions内蔵APIへ接続中...";
             pBar.style.display = "block";
 
             try {
-                // 【重要】wrangler.tomlと連動した本物のWorkers中継URL
-                const workersUrl = "https://backrooms-web-backend.backrooms-web-6va.workers.dev/steamcmd";
+                // 【変更点】Pages Functionsを利用し、同一ドメインの相対パスでリクエストを送る
+                const workersUrl = "/steamcmd";
                 
                 status.innerHTML = "Steam公式サーバーと同期中...<br>SteamCMDバイナリを受信しています...";
                 pFill.style.width = "30%";
 
-                // Workers経由でValve公式のデータをフェッチ
+                // 内蔵API経由でデータをフェッチ
                 const response = await fetch(workersUrl);
-                if (!response.ok) throw new Error("Workersからのデータ取得に失敗しました。");
+                if (!response.ok) throw new Error("APIからのデータ取得に失敗しました。");
                 
                 pFill.style.width = "70%";
                 status.innerHTML = "SteamCMDを解凍中...<br>仮想Cドライブ（OPFS）へ安全に書き込んでいます...";

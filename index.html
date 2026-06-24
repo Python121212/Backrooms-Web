@@ -45,17 +45,20 @@
             document.getElementById('login-btn').style.display = "none";
             document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>システムメモリを確保しています...";
 
+            // セキュリティ制限を受けないCDN（cdnjs/jsdelivr）の安定ミラーURLから直接読み込み
             const script = document.createElement('script');
-            script.src = "/libv86.js"; 
+            script.src = "https://cdn.jsdelivr.net/npm/v86@0.14.10/build/libv86.js"; 
+            script.crossOrigin = "anonymous"; // クロスオリジン制限を明示的に解除するハック
+            
             script.onload = async () => {
                 try {
-                    // スマホのブラウザでも確実に初期化できるようにメモリサイズを「512MB」へ調整（SteamCMDには十分）
+                    // 確実に読み込まれた状態で初期化をスタート
                     emulator = new V86Starter({
-                        wasm_path: "/v86.wasm", 
-                        memory_size: 512 * 1024 * 1024, // 2GBから512MBへ軽量化
+                        wasm_path: "https://cdn.jsdelivr.net/npm/v86@0.14.10/build/v86.wasm", 
+                        memory_size: 512 * 1024 * 1024, // スマホ用軽量サイズ
                         canvas: document.getElementById("screen"),
-                        bios: { url: "https://copy.sh/v86/images/seabios.bin" },
-                        vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
+                        bios: { url: "https://cdn.jsdelivr.net/npm/v86@0.14.10/bios/seabios.bin" },
+                        vga_bios: { url: "https://cdn.jsdelivr.net/npm/v86@0.14.10/bios/vgabios.bin" },
                         autostart: true,
                     });
 
@@ -72,11 +75,15 @@
                         }
                     });
                 } catch(err) {
-                    // 詳細なエラーログをコンソールに残す設定
                     document.getElementById('status-text').innerHTML = "エミュレータ内部の初期化に失敗しました。<br><small style='font-size:0.8rem;color:#ff4444;'>理由: " + err.message + "</small>";
                     console.error(err);
                 }
             };
+            
+            script.onerror = () => {
+                document.getElementById('status-text').innerHTML = "ライブラリの読み込みに失敗しました。ネットワークを確認してください。";
+            };
+            
             document.body.appendChild(script);
         }
 

@@ -9,84 +9,68 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; color: #fff; font-family: sans-serif; }
         #screen { width: 100vw; height: 100vh; display: block; }
         #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; }
-        #login-btn { display: none; margin-top: 15px; padding: 10px 20px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1rem; cursor: pointer; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.9); padding: 20px; border-radius: 10px; width: 80%; }
+        #login-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
     </style>
 </head>
 <body>
 
     <div id="loading">
-        <span id="status-text">Android 最適化環境 起動中...<br>OPFS 仮想Cドライブ接続中</span>
-        <br>
+        <div id="status-text">Android 最適化環境 起動中...<br>OPFS 仮想Cドライブ接続中</div>
         <button id="login-btn" onclick="startSteamInstall()">Steamアカウントでログインしてインポート</button>
     </div>
     
     <canvas id="screen"></canvas>
     <div id="touch-overlay"></div>
 
-    <script src="https://copy.sh/v86/build/libv86.js"></script>
-
     <script>
-        let emulator;
-        
         // PWA Service Worker 登録
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
-        // 1. OPFS（高速仮想ストレージ）に仮想Cドライブを作成
+        // 1. OPFSストレージ確認
         async function initStorage() {
             try {
                 const root = await navigator.storage.getDirectory();
                 await root.getDirectoryHandle('drive_c', { create: true });
-                
-                // ストレージ確保に成功したらログインボタンを表示
                 document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
-                document.getElementById('login-btn').style.display = "inline-block";
             } catch (e) {
-                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。Chromeの設定を確認してください。";
+                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
             }
         }
         initStorage();
 
-        // 2. SteamCMDの自動起動・ダウンロードシーケンス
+        // 2. 起動シーケンス
         function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
             document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>SteamCMDをセットアップしています...";
 
-            // Wasmエミュレータ（Linux環境）の立ち上げ
-            emulator = new V86Starter({
-                wasm_path: "https://copy.sh/v86/build/v86.wasm",
-                memory_size: 2048 * 1024 * 1024, // AndroidのRAMを贅沢に2GB割り当て
-                canvas: document.getElementById("screen"),
-                // ショートカット用の軽量Linuxイメージ（x86_64互換）をロード
-                bios: { url: "https://copy.sh/v86/images/seabios.bin" },
-                vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
-                autostart: true,
-            });
+            // 外部スクリプトの動的読み込み（エラー対策）
+            const script = document.createElement('script');
+            script.src = "https://copy.sh/v86/build/libv86.js";
+            script.onload = () => {
+                try {
+                    const emulator = new V86Starter({
+                        wasm_path: "https://copy.sh/v86/build/v86.wasm",
+                        memory_size: 2048 * 1024 * 1024,
+                        canvas: document.getElementById("screen"),
+                        bios: { url: "https://copy.sh/v86/images/seabios.bin" },
+                        vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
+                        autostart: true,
+                    });
 
-            // Linuxの起動が完了したら、裏でSteamCMDを動かしてTCP経由でデータを吸い上げるコマンドを送信
-            emulator.add_listener("serial0-output-char", function(char) {
-                // Linuxのコンソール準備ができたら自動実行されるスクリプト（擬似表現）
-                if (char === "]") { 
-                    document.getElementById('status-text').innerHTML = "Steam公式に接続中...<br>『Escape the Backrooms』のデータをスマホへストリーミング中...";
-                    
-                    // ここでLinux仮想環境内で「SteamCMD（-tcpモード）」を走らせ、Workersの土管経由でデータをOPFS（drive_c）に一括保存させる
-                    // コマンド例: ./steamcmd.sh +login あなたのアカウント +app_update 1705610 validate +quit
+                    emulator.add_listener("serial0-output-char", function(char) {
+                        if (char === "]") { 
+                            document.getElementById('status-text').innerHTML = "Steam公式に接続中...<br>『Escape the Backrooms』のデータをスマホへストリーミング中...";
+                        }
+                    });
+                } catch(err) {
+                    document.getElementById('status-text').innerHTML = "エミュレータの起動に失敗しました。";
                 }
-            });
+            };
+            document.body.appendChild(script);
         }
-
-        // 3. 入力遅延をゼロにするタッチレイヤー（スマホ画面のスワイプをそのままWineのコントローラーメモリへ）
-        const overlay = document.getElementById('touch-overlay');
-        overlay.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            // 仮想的にゲーム内の視点移動（XInput）としてWasmの特定アドレスへ直接バイトデータを書き込む
-            if (emulator) {
-                // emulator.write_memory(...) のような形で遅延なしで操作信号をパス
-                console.log("Direct Input -> X:", touch.clientX, "Y:", touch.clientY);
-            }
-        }, { passive: true });
     </script>
 </body>
 </html>

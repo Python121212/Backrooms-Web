@@ -20,74 +20,55 @@
         <button id="login-btn" onclick="startSteamInstall()">Steamアカウントでログインしてインポート</button>
     </div>
     
-    <!-- WineのOpenGLが描画されるWebGL 2.0キャンバス -->
     <canvas id="screen"></canvas>
-    <!-- 入力遅延をゼロにするためのタッチ専用レイヤー -->
     <div id="touch-overlay"></div>
 
     <script>
         let emulator;
         
-        // PWA Service Worker 登録
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
-        // 1. OPFS（高速仮想ストレージ）に仮想Cドライブを作成
         async function initStorage() {
             try {
                 const root = await navigator.storage.getDirectory();
                 await root.getDirectoryHandle('drive_c', { create: true });
                 document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
             } catch (e) {
-                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。Chromeの設定を確認してください。";
+                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
             }
         }
         initStorage();
 
-        // 2. SteamCMDの自動起動・ダウンロードシーケンス
         function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
             document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>ネットワーク土管（WebTransport）を接続しています...";
 
-            // 外部エミュレータJSの動的読み込み（読込エラー対策）
+            // 外部サイトではなく、自分のリポジトリに置いたファイルを直接読み込む（セキュリティ制限を突破）
             const script = document.createElement('script');
-            script.src = "https://copy.sh/v86/build/libv86.js";
+            script.src = "/libv86.js"; 
             script.onload = async () => {
                 try {
-                    // Cloudflare Workers (WebTransport) と接続
                     const connectionUrl = `https://${window.location.hostname.replace('.pages.dev', '')}.workers.dev/rpc`;
-                    let transport;
-                    try {
-                        transport = new WebTransport(connectionUrl);
-                        await transport.ready;
-                        console.log("WebTransport Connected to Workers!");
-                    } catch(e) {
-                        console.log("WebTransport fallback or mock alert.");
-                    }
-
-                    // Linuxエミュレータ（x86_64互換）の初期化
+                    
+                    // 自分のドメインから安全にWasmをロード
                     emulator = new V86Starter({
-                        wasm_path: "https://copy.sh/v86/build/v86.wasm",
-                        memory_size: 2048 * 1024 * 1024, // RAM 2GB
+                        wasm_path: "/v86.wasm", 
+                        memory_size: 2048 * 1024 * 1024,
                         canvas: document.getElementById("screen"),
                         bios: { url: "https://copy.sh/v86/images/seabios.bin" },
                         vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
                         autostart: true,
                     });
 
-                    // Linuxコンソール立ち上がり後にSteamCMDを実行するスクリプト
                     let commandSent = false;
                     emulator.add_listener("serial0-output-char", function(char) {
-                        // プロンプト（#）を検知したらコマンドをシリアル送信
                         if (char === "#" && !commandSent) { 
                             commandSent = true;
                             document.getElementById('status-text').innerHTML = "SteamCMD 接続成功。<br>『Escape the Backrooms』のインポートを開始します...";
                             
-                            // 仮想Linux内でSteamCMDを取得し、解凍するシェルコマンド
                             const initCmd = "mkdir -p /mnt/drive_c && cd /mnt/drive_c && wget https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && tar -xvzf steamcmd_linux.tar.gz\n";
-                            
-                            // Wasmのシリアル入力へ1文字ずつバイトデータを流し込む
                             for (let i = 0; i < initCmd.length; i++) {
                                 emulator.serial0_send(initCmd.charCodeAt(i));
                             }
@@ -101,12 +82,10 @@
             document.body.appendChild(script);
         }
 
-        // 3. 入力遅延をゼロにするタッチレイヤー
         const overlay = document.getElementById('touch-overlay');
         overlay.addEventListener('touchstart', (e) => {
             const touch = e.touches[0];
             if (emulator) {
-                // 画面スワイプをそのままWineの仮想コントローラーメモリ（XInput）へ直書きする下地
                 console.log("Direct Input -> X:", touch.clientX, "Y:", touch.clientY);
             }
         }, { passive: true });

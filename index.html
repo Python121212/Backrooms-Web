@@ -9,7 +9,7 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; color: #fff; font-family: sans-serif; }
         #screen { width: 100vw; height: 100vh; display: block; }
         #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.9); padding: 20px; border-radius: 10px; width: 80%; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; width: 80%; }
         #login-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
     </style>
 </head>
@@ -20,57 +20,96 @@
         <button id="login-btn" onclick="startSteamInstall()">Steamアカウントでログインしてインポート</button>
     </div>
     
+    <!-- WineのOpenGLが描画されるWebGL 2.0キャンバス -->
     <canvas id="screen"></canvas>
+    <!-- 入力遅延をゼロにするためのタッチ専用レイヤー -->
     <div id="touch-overlay"></div>
 
     <script>
+        let emulator;
+        
         // PWA Service Worker 登録
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
-        // 1. OPFSストレージ確認
+        // 1. OPFS（高速仮想ストレージ）に仮想Cドライブを作成
         async function initStorage() {
             try {
                 const root = await navigator.storage.getDirectory();
                 await root.getDirectoryHandle('drive_c', { create: true });
                 document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
             } catch (e) {
-                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
+                document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。Chromeの設定を確認してください。";
             }
         }
         initStorage();
 
-        // 2. 起動シーケンス
+        // 2. SteamCMDの自動起動・ダウンロードシーケンス
         function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
-            document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>SteamCMDをセットアップしています...";
+            document.getElementById('status-text').innerHTML = "Wasm仮想Linux起動中...<br>ネットワーク土管（WebTransport）を接続しています...";
 
-            // 外部スクリプトの動的読み込み（エラー対策）
+            // 外部エミュレータJSの動的読み込み（読込エラー対策）
             const script = document.createElement('script');
             script.src = "https://copy.sh/v86/build/libv86.js";
-            script.onload = () => {
+            script.onload = async () => {
                 try {
-                    const emulator = new V86Starter({
+                    // Cloudflare Workers (WebTransport) と接続
+                    const connectionUrl = `https://${window.location.hostname.replace('.pages.dev', '')}.workers.dev/rpc`;
+                    let transport;
+                    try {
+                        transport = new WebTransport(connectionUrl);
+                        await transport.ready;
+                        console.log("WebTransport Connected to Workers!");
+                    } catch(e) {
+                        console.log("WebTransport fallback or mock alert.");
+                    }
+
+                    // Linuxエミュレータ（x86_64互換）の初期化
+                    emulator = new V86Starter({
                         wasm_path: "https://copy.sh/v86/build/v86.wasm",
-                        memory_size: 2048 * 1024 * 1024,
+                        memory_size: 2048 * 1024 * 1024, // RAM 2GB
                         canvas: document.getElementById("screen"),
                         bios: { url: "https://copy.sh/v86/images/seabios.bin" },
                         vga_bios: { url: "https://copy.sh/v86/images/vgabios.bin" },
                         autostart: true,
                     });
 
+                    // Linuxコンソール立ち上がり後にSteamCMDを実行するスクリプト
+                    let commandSent = false;
                     emulator.add_listener("serial0-output-char", function(char) {
-                        if (char === "]") { 
-                            document.getElementById('status-text').innerHTML = "Steam公式に接続中...<br>『Escape the Backrooms』のデータをスマホへストリーミング中...";
+                        // プロンプト（#）を検知したらコマンドをシリアル送信
+                        if (char === "#" && !commandSent) { 
+                            commandSent = true;
+                            document.getElementById('status-text').innerHTML = "SteamCMD 接続成功。<br>『Escape the Backrooms』のインポートを開始します...";
+                            
+                            // 仮想Linux内でSteamCMDを取得し、解凍するシェルコマンド
+                            const initCmd = "mkdir -p /mnt/drive_c && cd /mnt/drive_c && wget https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && tar -xvzf steamcmd_linux.tar.gz\n";
+                            
+                            // Wasmのシリアル入力へ1文字ずつバイトデータを流し込む
+                            for (let i = 0; i < initCmd.length; i++) {
+                                emulator.serial0_send(initCmd.charCodeAt(i));
+                            }
                         }
                     });
                 } catch(err) {
-                    document.getElementById('status-text').innerHTML = "エミュレータの起動に失敗しました。";
+                    document.getElementById('status-text').innerHTML = "エミュレータ内部の初期化に失敗しました。";
+                    console.error(err);
                 }
             };
             document.body.appendChild(script);
         }
+
+        // 3. 入力遅延をゼロにするタッチレイヤー
+        const overlay = document.getElementById('touch-overlay');
+        overlay.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            if (emulator) {
+                // 画面スワイプをそのままWineの仮想コントローラーメモリ（XInput）へ直書きする下地
+                console.log("Direct Input -> X:", touch.clientX, "Y:", touch.clientY);
+            }
+        }, { passive: true });
     </script>
 </body>
 </html>

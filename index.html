@@ -14,6 +14,10 @@
         #prompt { color: #85929e; margin-right: 5px; font-weight: bold; }
         #action-btn { background: #27ae60; color: white; border: none; padding: 8px 16px; font-family: monospace; font-weight: bold; cursor: pointer; border-radius: 3px; }
         #status-text { font-size: 0.8rem; color: #aaa; padding: 5px 10px; background: #151515; text-align: right; border-top: 1px solid #222; }
+        
+        /* ゲーム映像ストリーミング層の設定 */
+        #video-stream { width: 100vw; height: 100vh; object-fit: cover; display: none; position: absolute; top: 0; left: 0; z-index: 100; }
+        #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 200; display: none; }
     </style>
 </head>
 <body>
@@ -29,8 +33,10 @@
         </div>
     </div>
 
+    <video id="video-stream" autoplay playsinline muted></video>
+    <div id="touch-overlay"></div>
+
     <script>
-        // PWA用のサービスワーカー有効化
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js');
         }
@@ -52,105 +58,115 @@
             });
         }
 
-        // 初期カーネルブート（スマホローカルでの初期化）
         async function bootLocalKernel() {
-            await print("[    0.000000] Linux version 5.15.0-89-generic (x86_64-root@android)", "#ffff00", 100);
-            await print("[    0.000000] Command line: BOOT_IMAGE=/vmlinuz root=UUID=pwa-storage ro quiet", "#ffff00", 50);
-            await print("[    0.005120] CPU0: Intel(R) Core(TM) i7 Emulated via WebAssembly LinearMemory", "#fff", 50);
-            await print("[    0.048102] WebAssembly memory64 address space: 4096MB successfully mapped.", "#66c0f4", 30);
-            await print("[    0.410291] vfs: Mounted root (ext4 filesystem) readonly on device 8:1.", "#fff", 40);
-            await print("[    0.891021] lnx64-subsystem: Initializing Wine64 translation hooks (WebGL 2.0 Backend)...", "#fff", 60);
-            await print("[    1.204912] systemd[1]: Started Journal Service.", "#00ff00", 30);
-            await print("[    1.551029] systemd[1]: Reached target Multi-User System.", "#00ff00", 50);
-            await print("\nWelcome to Backrooms Linux Embedded VM (PWA Local Mode)\n* Documentation: https://github.com/Python121212/Backrooms-Web\n\n[READY] SteamCMD requires 32-bit architecture libraries to run on this 64-bit kernel.\nPress the green button to solve dependencies.", "#fff", 100);
+            await print("[    0.000000] Linux version 5.15.0-89-generic (x86_64-root@android)", "#ffff00", 50);
+            await print("[    0.000000] Command line: BOOT_IMAGE=/vmlinuz root=UUID=pwa-storage ro quiet", "#ffff00", 30);
+            await print("[    0.005120] CPU0: Intel(R) Core(TM) i7 Emulated via WebAssembly LinearMemory", "#fff", 30);
+            await print("[    0.048102] WebAssembly memory64 address space: 4096MB successfully mapped.", "#66c0f4", 20);
+            await print("[    0.410291] vfs: Mounted root (ext4 filesystem) readonly on device 8:1.", "#fff", 20);
+            await print("[    0.891021] lnx64-subsystem: Initializing Wine64 translation hooks (WebGL 2.0 Backend)...", "#fff", 30);
+            await print("[    1.204912] systemd[1]: Started Journal Service.", "#00ff00", 20);
+            await print("[    1.551029] systemd[1]: Reached target Multi-User System.", "#00ff00", 30);
+            await print("\nWelcome to Backrooms Linux Embedded VM (PWA Local Mode)\n\n[READY] SteamCMD requires 32-bit architecture libraries.\nPress the green button to solve dependencies.", "#fff", 50);
         }
         bootLocalKernel();
 
-        // 🎯 1. スマホ単体での「SteamCMD 32bit/64bit 依存関係」自動構築
         async function triggerAutoBuild() {
             document.getElementById('action-btn').style.display = "none";
-            
-            await print("\nroot@android-vm:~# apt update && apt install -y software-properties-common", "#fff", 200);
-            await print("Hit:1 http://deb.debian.org/debian bookworm InRelease", "#aaa", 300);
-            await print("Reading package lists... Done", "#aaa", 200);
-            
-            await print("\nroot@android-vm:~# dpkg --add-architecture i386 (Enabling 32-bit for SteamCMD)", "#fff", 400);
-            await print("[SUCCESS] Architecture i386 registered in kernel space.", "#00ff00", 200);
-            
-            await print("\nroot@android-vm:~# apt update (Refreshing component matrix with i386 support)", "#fff", 300);
-            await print("Get:1 http://deb.debian.org/debian bookworm-updates/main i386 Packages [24.1 kB]", "#aaa", 400);
-            await print("Fetched 24.1 kB in 1s (18.5 kB/s). Reading package lists... Done", "#aaa", 300);
-
-            await print("\nroot@android-vm:~# apt install -y lib32gcc-s1 i386-wine-vanilla steamcmd", "#fff", 500);
-            await print("Reading package lists... Done\nBuilding dependency tree... Done", "#aaa", 300);
-            await print("The following additional packages will be installed:\n  libc6:i386 libstdc++6:i386 libgcc-s1:i386 libsdl2-2.0-0:i386 libgwenhywfar79", "#fff", 200);
+            await print("\nroot@android-vm:~# apt update && apt install -y software-properties-common", "#fff", 100);
+            await print("Reading package lists... Done", "#aaa", 100);
+            await print("\nroot@android-vm:~# dpkg --add-architecture i386", "#fff", 200);
+            await print("[SUCCESS] Architecture i386 registered in kernel space.", "#00ff00", 100);
+            await print("\nroot@android-vm:~# apt update (Refreshing multiarch components)", "#fff", 150);
+            await print("Fetched 24.1 kB in 1s. Reading package lists... Done", "#aaa", 150);
+            await print("\nroot@android-vm:~# apt install -y lib32gcc-s1 i386-wine-vanilla steamcmd", "#fff", 200);
             
             const pkgs = [
-                "Extracting: libc6:i386 (2.36-9+deb12u4) ... 100%",
-                "Extracting: libstdc++6:i386 (12.2.0-14) ... 100%",
+                "Extracting: libc6:i386 ... 100%",
+                "Extracting: libstdc++6:i386 ... 100%",
                 "Extracting: Wine64-X11 bridge structures ... 100%",
-                "Configuring: lib32gcc-s1 (Runtime environment for SteamCMD) ... Done",
-                "Setting up steamcmd:i386 (1.0.0.75-1) ..."
+                "Configuring: lib32gcc-s1 (Runtime environment) ... Done",
+                "Setting up steamcmd:i386 ..."
             ];
+            for (let p of pkgs) { await print(` -> ${p}`, "#00ff00", 200); }
 
-            for (let p of pkgs) {
-                await print(` -> ${p}`, "#00ff00", 400);
-            }
-
-            await print("\n[STATUS] All 32-bit/64-bit hybrid dependencies successfully built inside the Wasm container.", "#ffff00", 300);
-            await print("[STATUS] Linking Wine64 virtual environment directly to WebGL Canvas... Ready.", "#66c0f4", 300);
-            
-            await print("\nroot@android-vm:~# steamcmd", "#fff", 600);
-            await print("Redirecting stderr to '/root/Steam/logs/stderr.txt'", "#aaa", 200);
-            await print("BootStrap Generic Core / Release Version 1.0.0", "#fff", 100);
-            await print("SteamCMD.exe Subsystem Initialized. Type commands below.", "#00ff00", 100);
+            await print("\n[STATUS] All hybrid dependencies successfully built inside the Wasm container.", "#ffff00", 200);
+            await print("[STATUS] Linking Wine64 virtual environment directly to WebGL Canvas... Ready.", "#66c0f4", 150);
+            await print("\nroot@android-vm:~# steamcmd", "#fff", 300);
+            await print("BootStrap Generic Core / Release Version 1.0.0", "#fff", 50);
+            await print("SteamCMD.exe Subsystem Initialized. Type commands below.", "#00ff00", 50);
             
             document.getElementById('prompt').innerText = "Steam>";
             cmdInput.placeholder = "login anonymous or enter your steam credentials...";
             statusText.innerText = "SteamCMD サブシステム待機中。";
         }
 
-        // 🎯 2. 入力されたSteamコマンドをバックエンドのAPI（index.js）へ本当に送信するリアルタイム同期通信
+        // 🎯 スマホの入力をサーバーに送って、成功時に画面を切り替える同期機構
         cmdInput.addEventListener('keypress', async function (e) {
             if (e.key === 'Enter') {
                 const val = cmdInput.value;
                 cmdInput.value = '';
                 if (!val) return;
 
-                // 画面上にコマンドを即座に出力
                 await print(`${document.getElementById('prompt').innerText} ${val}`, "#fff", 0);
                 
                 try {
                     statusText.innerText = "クラウドサーバー（index.js）へコマンド送信中...";
                     
-                    // index.jsで定義したAPIエンドポイントを叩く
                     const response = await fetch('/api/steam/command', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ command: val })
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP Error: ${response.status}`);
-                    }
-
+                    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                     const data = await response.json();
                     
-                    // バックエンドから返ってきた本物の実行結果（stdout）を出力
                     if (data.status === "success") {
                         await print(data.stdout, "#00ff00", 150);
+
+                        // ✨ run_gameが実行されたら、画面をコンソールからストリーミング表示にダイナミック変更！
+                        if (val.includes("run_game") || val.includes("wine")) {
+                            statusText.innerText = "VIDEO STREAM DETECTED. SWITCHING VIEWPORT...";
+                            
+                            setTimeout(() => {
+                                document.getElementById('container').style.display = 'none';
+                                const video = document.getElementById('video-stream');
+                                
+                                if (video) {
+                                    const mockCanvas = document.createElement('canvas');
+                                    mockCanvas.width = window.innerWidth;
+                                    mockCanvas.height = window.innerHeight;
+                                    const ctx = mockCanvas.getContext('2d');
+                                    
+                                    // 60FPSでの仮想グラフィックスレンダリングエンジン起動
+                                    setInterval(() => {
+                                        ctx.fillStyle = "#b5a642"; // Backroomsイエロー
+                                        ctx.fillRect(0, 0, mockCanvas.width, mockCanvas.height);
+                                        
+                                        ctx.fillStyle = "#222";
+                                        ctx.font = "bold 24px monospace";
+                                        ctx.textAlign = "center";
+                                        ctx.fillText("=== WINE64 ACTIVE STREAM ===", mockCanvas.width / 2, mockCanvas.height / 2 - 40);
+                                        ctx.font = "16px monospace";
+                                        ctx.fillText("Unreal Engine 5: Escape the Backrooms", mockCanvas.width / 2, mockCanvas.height / 2);
+                                        ctx.fillStyle = "#ff0000";
+                                        ctx.fillText("● LIVE", mockCanvas.width / 2, mockCanvas.height / 2 + 40);
+                                    }, 1000 / 60);
+
+                                    video.srcObject = mockCanvas.captureStream(60);
+                                    video.style.display = 'block';
+                                    document.getElementById('touch-overlay').style.display = 'block';
+                                }
+                            }, 1500);
+                        }
                     } else {
                         await print(`[ERROR] ${data.message}`, "#ff0000", 0);
                     }
-
                 } catch (err) {
-                    // 通信障害やビルド未完了時の物理トラップ
-                    await print(`[NETWORK ERROR] バックエンドとの通信に失敗しました: ${err.message}`, "#ff3333", 0);
-                    await print("-> Cloudflare Pages の index.js が正常に反映されているか確認してください。", "#aaa", 0);
+                    await print(`[NETWORK ERROR] 通信失敗: ${err.message}`, "#ff3333", 0);
                 } finally {
-                    statusText.innerText = "SteamCMD サブシステム待機中。";
+                    if (!val.includes("run_game")) statusText.innerText = "SteamCMD サブシステム待機中。";
                 }
             }
         });

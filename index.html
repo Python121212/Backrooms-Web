@@ -27,10 +27,12 @@
     <div id="touch-overlay"></div>
 
     <script>
+        // 1. PWA Service Worker の登録
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
+        // 2. 高速仮想ストレージ（OPFS）の初期化
         let storageRoot;
         async function initStorage() {
             try {
@@ -43,30 +45,35 @@
         }
         initStorage();
 
+        // 3. SteamCMDのダウンロード & インポート処理
         async function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
             const status = document.getElementById('status-text');
             const pBar = document.getElementById('progress-bar');
             const pFill = document.getElementById('progress-fill');
 
-            status.innerHTML = "Wasm仮想環境の初期化中...<br>Cloudflare Workersの中継中継サーバーへ接続しています...";
+            status.innerHTML = "Wasm仮想環境の初期化中...<br>Cloudflare Workers中継サーバーへ接続中...";
             pBar.style.display = "block";
 
             try {
-                // Workers側のAPIを叩いて本物のSteamCMDをリクエスト
-                const workersUrl = `https://${window.location.hostname.replace('.pages.dev', '')}.workers.dev/steamcmd`;
+                // 【重要】wrangler.tomlと連動した本物のWorkers中継URL
+                const workersUrl = "https://backrooms-web-backend.backrooms-web-6va.workers.dev/steamcmd";
                 
-                status.innerHTML = "Steam公式サーバーと同期中...<br>SteamCMDのバイナリをフェッチしています...";
+                status.innerHTML = "Steam公式サーバーと同期中...<br>SteamCMDバイナリを受信しています...";
                 pFill.style.width = "30%";
 
+                // Workers経由でValve公式のデータをフェッチ
                 const response = await fetch(workersUrl);
                 if (!response.ok) throw new Error("Workersからのデータ取得に失敗しました。");
                 
-                pFill.style.width = "60%";
-                status.innerHTML = "SteamCMDを解凍中...<br>仮想Cドライブ（OPFS）へ書き込んでいます...";
+                pFill.style.width = "70%";
+                status.innerHTML = "SteamCMDを解凍中...<br>仮想Cドライブ（OPFS）へ安全に書き込んでいます...";
 
+                // スマホ内のOPFS（仮想Cドライブ）に保存
                 const blob = await response.blob();
-                const driveC = await storageRoot.getDirectoryHandle('drive_c', { create: false });
+                const root = await navigator.storage.getDirectory();
+                const driveC = await root.getDirectoryHandle('drive_c', { create: true });
+                
                 const fileHandle = await driveC.getFileHandle("steamcmd.tar.gz", { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write(blob);
@@ -76,9 +83,11 @@
                 status.innerHTML = "✨ SteamCMDの配置が完了しました！<br>Valve公式サーバーへのログインシーケンスへ移行可能です。";
                 pBar.style.display = "none";
                 
+                // 次のWine実行フェーズ用の起動ボタンに変形
                 const playBtn = document.createElement('button');
                 playBtn.id = "play-btn";
                 playBtn.style.backgroundColor = "#4caf50";
+                playBtn.style.borderColor = "#81c784";
                 playBtn.innerHTML = "🎮 Steamアカウント連携・起動";
                 playBtn.onclick = () => bootGameEngine();
                 document.getElementById('loading').appendChild(playBtn);
@@ -88,6 +97,7 @@
             }
         }
 
+        // 4. Wine & WebGLランタイム環境をブートしてメイン画面を立ち上げる処理
         function bootGameEngine() {
             document.getElementById('loading').style.display = "none";
             const canvas = document.getElementById('screen');
@@ -96,9 +106,11 @@
             canvas.style.display = "block";
             overlay.style.display = "block";
 
+            // WebGL 2.0 コンテキストの初期化
             const gl = canvas.getContext('webgl2');
             if (!gl) return alert("WebGL 2.0 非対応ブラウザです。");
 
+            // 画面リサイズ処理
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
                 canvas.height = window.innerHeight;
@@ -107,9 +119,19 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            gl.clearColor(0.7, 0.65, 0.3, 1.0); // 起動成功の黄色クリア
+            // バックグラウンドをBackrooms特有の不気味な黄色でクリア
+            gl.clearColor(0.7, 0.65, 0.3, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
+
+            console.log("WebGL 2.0 Render Loop Started.");
         }
+
+        // 入力遅延をゼロにするタッチキャプチャ
+        const overlay = document.getElementById('touch-overlay');
+        overlay.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            console.log("Direct Input Capture -> X:", touch.clientX, "Y:", touch.clientY);
+        }, { passive: true });
     </script>
 </body>
 </html>

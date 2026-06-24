@@ -15,12 +15,11 @@
         #progress-fill { width: 0%; height: 100%; background-color: #66c0f4; transition: width 0.3s ease; }
         #v86-terminal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #00ff00; font-family: monospace; font-size: 0.85rem; padding: 10px; box-sizing: border-box; overflow-y: auto; white-space: pre-wrap; display: none; z-index: 5; }
     </style>
-    <script src="/libv86.js"></script>
 </head>
 <body>
 
     <div id="loading">
-        <div id="status-text">Android 最適化環境 起動中...<br>OPFS 仮想Cドライブ接続中</div>
+        <div id="status-text">Android 最最適化環境 起動中...<br>OPFS 仮想Cドライブ接続中</div>
         <button id="login-btn" onclick="startSteamInstall()">Steamアカウントでログインしてインポート</button>
         <div id="progress-bar"><div id="progress-fill"></div></div>
     </div>
@@ -84,12 +83,35 @@
                 playBtn.style.backgroundColor = "#4caf50";
                 playBtn.style.borderColor = "#81c784";
                 playBtn.innerHTML = "🎮 Steamアカウント連携・起動";
-                playBtn.onclick = () => bootGameEngine();
+                playBtn.onclick = () => loadScriptAndBoot();
                 document.getElementById('loading').appendChild(playBtn);
 
             } catch (err) {
                 status.innerHTML = "Steam初期化中にエラーが発生しました。<br><small style='font-size:0.8rem;color:#ff4444;'>理由: " + err.message + "</small>";
             }
+        }
+
+        // 動的に libv86.js を読み込んでから起動する安全機構
+        function loadScriptAndBoot() {
+            const status = document.getElementById('status-text');
+            status.innerHTML = "エミュレータコア（libv86）をロード中...";
+
+            if (typeof V86Starter !== "undefined") {
+                bootGameEngine();
+                return;
+            }
+
+            const script = document.createElement("script");
+            script.src = "/libv86.js";
+            script.onload = () => {
+                bootGameEngine();
+            };
+            script.onerror = () => {
+                const terminal = document.getElementById('v86-terminal');
+                terminal.style.display = "block";
+                terminal.innerHTML = "エラー: /libv86.js の読み込みに失敗しました。ファイルが存在するか確認してください。";
+            };
+            document.head.appendChild(script);
         }
 
         // 🎮 v86 Linux Runtime & SteamCMDランタイム環境の本格起動
@@ -101,23 +123,21 @@
             loading.style.display = "block";
             status.innerHTML = "x86エミュレータ（Wasm）コア展開中...<br>Linuxカーネルイメージをロードしています...";
             
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 1200));
             
-            // 画面をターミナル表示へ切り替える
             loading.style.display = "none";
             terminal.style.display = "block";
 
             try {
-                // リポジトリ内の v86.wasm を使用して仮想マシンを初期化
+                // 初期化チェックを通過した状態でインスタンス生成
                 const emulator = new V86Starter({
                     wasm_path: "/v86.wasm",
-                    memory_size: 512 * 1024 * 1024, // 仮想RAM 512MB割り当て
+                    memory_size: 512 * 1024 * 1024,
                     vga_as_canvas: true,
                     screen_container: document.getElementById("screen"),
                     autostart: true
                 });
 
-                // 仮想マシン上の出力をスマホの画面にリアルタイムシミュレート出力
                 let logLines = [
                     "[    0.000000] Booting Linux kernel...",
                     "[    0.042103] CPU0: Intel(R) Core(TM) i7 compatible WebAssembly Core",
@@ -142,7 +162,7 @@
                         terminal.innerHTML += logLines[currentLine] + "\n";
                         terminal.scrollTop = terminal.scrollHeight;
                         currentLine++;
-                        setTimeout(printLog, Math.random() * 400 + 200); // リアルなコマンド遅延
+                        setTimeout(printLog, Math.random() * 300 + 150);
                     } else {
                         setTimeout(() => {
                             terminal.style.display = "none";
@@ -175,9 +195,8 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            gl.clearColor(0.7, 0.65, 0.3, 1.0); // 起動成功の黄色クリア
+            gl.clearColor(0.7, 0.65, 0.3, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
-            console.log("Escape the Backrooms WebGL Layer Ready.");
         }
 
         const overlay = document.getElementById('touch-overlay');

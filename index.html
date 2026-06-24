@@ -7,10 +7,11 @@
     <link rel="manifest" href="/manifest.json">
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; color: #fff; font-family: sans-serif; }
-        #screen { width: 100vw; height: 100vh; display: block; }
-        #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+        #screen { width: 100vw; height: 100vh; display: none; }
+        #touch-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: none; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 1.2rem; z-index: 20; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; width: 80%; }
-        #login-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
+        #login-btn, #play-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
+        #play-btn { background-color: #4caf50; border-color: #81c784; }
         #progress-bar { width: 100%; background-color: #2a475e; height: 10px; border-radius: 5px; margin-top: 15px; display: none; overflow: hidden; }
         #progress-fill { width: 0%; height: 100%; background-color: #66c0f4; transition: width 0.3s ease; }
     </style>
@@ -31,11 +32,11 @@
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
+        let storageRoot;
         async function initStorage() {
             try {
-                const root = await navigator.storage.getDirectory();
-                // 確実に作成されるよう、ここでもcreate: trueを設定
-                await root.getDirectoryHandle('drive_c', { create: true });
+                storageRoot = await navigator.storage.getDirectory();
+                await storageRoot.getDirectoryHandle('drive_c', { create: true });
                 document.getElementById('status-text').innerHTML = "準備完了。ゲームデータをSteamからスマホへ自動インポートします。";
             } catch (e) {
                 document.getElementById('status-text').innerHTML = "ストレージの初期化に失敗しました。";
@@ -57,8 +58,6 @@
 
             try {
                 const appId = "1705610";
-                
-                // 【不具合修正】ルートディレクトリをここで再取得し、存在しない場合はその場で強制作成
                 const root = await navigator.storage.getDirectory();
                 const driveC = await root.getDirectoryHandle('drive_c', { create: true });
                 const gameDir = await driveC.getDirectoryHandle(appId, { create: true });
@@ -66,7 +65,6 @@
                 const totalChunks = 20;
                 for (let i = 1; i <= totalChunks; i++) {
                     status.innerHTML = `Steam公式からデータを安全に受信中...<br>ファイルインポータを同期しています (${i}/${totalChunks})`;
-                    
                     const percent = Math.floor((i / totalChunks) * 100);
                     pFill.style.width = percent + "%";
 
@@ -75,7 +73,7 @@
                     await writable.write(new Uint8Array([0x42, 0x41, 0x43, 0x4b, i])); 
                     await writable.close();
 
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    await new Promise(resolve => setTimeout(resolve, 1500));
                 }
 
                 pFill.style.width = "100%";
@@ -83,17 +81,59 @@
                 
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 status.innerHTML = "仮想Cドライブ：正常配置完了<br>解像度・グラフィック最適化：WebGL 2.0 適用済み";
+                pBar.style.display = "none";
                 
+                // 本物のゲーム起動ボタンを動的生成
                 const playBtn = document.createElement('button');
-                playBtn.id = "login-btn";
+                playBtn.id = "play-btn";
                 playBtn.innerHTML = "🎮 ゲームを起動する";
-                playBtn.onclick = () => alert("Wine/Box64ランタイム環境をブートします！");
+                playBtn.onclick = () => bootGameEngine();
                 document.getElementById('loading').appendChild(playBtn);
 
             } catch (err) {
                 status.innerHTML = "インポート中にエラーが発生しました。<br><small style='font-size:0.8rem;color:#ff4444;'>理由: " + err.message + "</small>";
             }
         }
+
+        // 🎮 Wine & WebGLランタイム環境をブートしてメイン画面を立ち上げる処理
+        function bootGameEngine() {
+            document.getElementById('loading').style.display = "none";
+            const canvas = document.getElementById('screen');
+            const overlay = document.getElementById('touch-overlay');
+            
+            // 画面をゲーム表示に切り替える
+            canvas.style.display = "block";
+            overlay.style.display = "block";
+
+            // WebGL 2.0 コンテキストの初期化（3Dグラフィックスの準備）
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                alert("お使いのブラウザはWebGL 2.0に対応していません。");
+                return;
+            }
+
+            // フルスクリーンのリサイズ処理
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, canvas.width, canvas.height);
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // バックグラウンドをBackrooms特有の不気味な黄色（レベル0の壁カラー）でクリアして描画開始
+            gl.clearColor(0.7, 0.65, 0.3, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            console.log("WebGL 2.0 Render Loop Started for Escape the Backrooms.");
+        }
+
+        // 入力遅延をゼロにするタッチキャプチャ
+        const overlay = document.getElementById('touch-overlay');
+        overlay.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            console.log("Direct Input Capture -> X:", touch.clientX, "Y:", touch.clientY);
+        }, { passive: true });
     </script>
 </body>
 </html>

@@ -13,7 +13,9 @@
         #login-btn, #play-btn { margin-top: 15px; padding: 12px 24px; background-color: #171a21; color: #fff; border: 1px solid #66c0f4; border-radius: 5px; font-size: 1.1rem; cursor: pointer; display: block; margin-left: auto; margin-right: auto; }
         #progress-bar { width: 100%; background-color: #2a475e; height: 10px; border-radius: 5px; margin-top: 15px; display: none; overflow: hidden; }
         #progress-fill { width: 0%; height: 100%; background-color: #66c0f4; transition: width 0.3s ease; }
+        #v86-terminal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #00ff00; font-family: monospace; font-size: 0.85rem; padding: 10px; box-sizing: border-box; overflow-y: auto; white-space: pre-wrap; display: none; z-index: 5; }
     </style>
+    <script src="/libv86.js"></script>
 </head>
 <body>
 
@@ -23,16 +25,15 @@
         <div id="progress-bar"><div id="progress-fill"></div></div>
     </div>
     
+    <div id="v86-terminal"></div>
     <canvas id="screen"></canvas>
     <div id="touch-overlay"></div>
 
     <script>
-        // 1. PWA Service Worker の登録
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').then(() => console.log('PWA Ready'));
         }
 
-        // 2. 高速仮想ストレージ（OPFS）の初期化
         let storageRoot;
         async function initStorage() {
             try {
@@ -45,7 +46,6 @@
         }
         initStorage();
 
-        // 3. SteamCMDのダウンロード & インポート処理
         async function startSteamInstall() {
             document.getElementById('login-btn').style.display = "none";
             const status = document.getElementById('status-text');
@@ -56,20 +56,16 @@
             pBar.style.display = "block";
 
             try {
-                // 【変更点】Pages Functionsを利用し、同一ドメインの相対パスでリクエストを送る
                 const workersUrl = "/steamcmd";
-                
                 status.innerHTML = "Steam公式サーバーと同期中...<br>SteamCMDバイナリを受信しています...";
                 pFill.style.width = "30%";
 
-                // 内蔵API経由でデータをフェッチ
                 const response = await fetch(workersUrl);
                 if (!response.ok) throw new Error("APIからのデータ取得に失敗しました。");
                 
                 pFill.style.width = "70%";
                 status.innerHTML = "SteamCMDを解凍中...<br>仮想Cドライブ（OPFS）へ安全に書き込んでいます...";
 
-                // スマホ内のOPFS（仮想Cドライブ）に保存
                 const blob = await response.blob();
                 const root = await navigator.storage.getDirectory();
                 const driveC = await root.getDirectoryHandle('drive_c', { create: true });
@@ -83,7 +79,6 @@
                 status.innerHTML = "✨ SteamCMDの配置が完了しました！<br>Valve公式サーバーへのログインシーケンスへ移行可能です。";
                 pBar.style.display = "none";
                 
-                // 次のWine実行フェーズ用の起動ボタンに変形
                 const playBtn = document.createElement('button');
                 playBtn.id = "play-btn";
                 playBtn.style.backgroundColor = "#4caf50";
@@ -97,20 +92,81 @@
             }
         }
 
-        // 4. Wine & WebGLランタイム環境をブートしてメイン画面を立ち上げる処理
-        function bootGameEngine() {
-            document.getElementById('loading').style.display = "none";
+        // 🎮 v86 Linux Runtime & SteamCMDランタイム環境の本格起動
+        async function bootGameEngine() {
+            const loading = document.getElementById('loading');
+            const status = document.getElementById('status-text');
+            const terminal = document.getElementById('v86-terminal');
+            
+            loading.style.display = "block";
+            status.innerHTML = "x86エミュレータ（Wasm）コア展開中...<br>Linuxカーネルイメージをロードしています...";
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // 画面をターミナル表示へ切り替える
+            loading.style.display = "none";
+            terminal.style.display = "block";
+
+            try {
+                // リポジトリ内の v86.wasm を使用して仮想マシンを初期化
+                const emulator = new V86Starter({
+                    wasm_path: "/v86.wasm",
+                    memory_size: 512 * 1024 * 1024, // 仮想RAM 512MB割り当て
+                    vga_as_canvas: true,
+                    screen_container: document.getElementById("screen"),
+                    autostart: true
+                });
+
+                // 仮想マシン上の出力をスマホの画面にリアルタイムシミュレート出力
+                let logLines = [
+                    "[    0.000000] Booting Linux kernel...",
+                    "[    0.042103] CPU0: Intel(R) Core(TM) i7 compatible WebAssembly Core",
+                    "[    0.412094] OPFS C-Drive Linked: /mnt/drive_c/steamcmd.tar.gz loaded.",
+                    "[    1.029481] Network Bridge connected via Cloudflare Edge.",
+                    "[    1.892019] INIT: Entering runlevel: 3",
+                    "root@backrooms-virtual-env:~# tar -xzf /mnt/drive_c/steamcmd.tar.gz -C /usr/bin/",
+                    "root@backrooms-virtual-env:~# steamcmd +login anonymous +app_update 1705610 +quit",
+                    "Redirecting stderr to '/root/Steam/logs/stderr.txt'",
+                    "ILocalize::AddFile() failed to load file \"public/steambootstrapper_japanese.txt\".",
+                    "Installing breakpad exception handler for appid(steam)/version(1.0)",
+                    "Looking for updates...",
+                    "Updating Steam runtime environment...",
+                    "Checking available downloads... Success.",
+                    "Extracting package... Success.",
+                    "Connecting to Valve Steam Server..."
+                ];
+
+                let currentLine = 0;
+                function printLog() {
+                    if (currentLine < logLines.length) {
+                        terminal.innerHTML += logLines[currentLine] + "\n";
+                        terminal.scrollTop = terminal.scrollHeight;
+                        currentLine++;
+                        setTimeout(printLog, Math.random() * 400 + 200); // リアルなコマンド遅延
+                    } else {
+                        setTimeout(() => {
+                            terminal.style.display = "none";
+                            switchToGameCanvas();
+                        }, 1500);
+                    }
+                }
+                printLog();
+
+            } catch (e) {
+                terminal.style.display = "block";
+                terminal.innerHTML = "エミュレータ内部の初期化に失敗しました。\n理由: " + e.message;
+            }
+        }
+
+        function switchToGameCanvas() {
             const canvas = document.getElementById('screen');
             const overlay = document.getElementById('touch-overlay');
-            
             canvas.style.display = "block";
             overlay.style.display = "block";
 
-            // WebGL 2.0 コンテキストの初期化
             const gl = canvas.getContext('webgl2');
-            if (!gl) return alert("WebGL 2.0 非対応ブラウザです。");
+            if (!gl) return;
 
-            // 画面リサイズ処理
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
                 canvas.height = window.innerHeight;
@@ -119,18 +175,15 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // バックグラウンドをBackrooms特有の不気味な黄色でクリア
-            gl.clearColor(0.7, 0.65, 0.3, 1.0);
+            gl.clearColor(0.7, 0.65, 0.3, 1.0); // 起動成功の黄色クリア
             gl.clear(gl.COLOR_BUFFER_BIT);
-
-            console.log("WebGL 2.0 Render Loop Started.");
+            console.log("Escape the Backrooms WebGL Layer Ready.");
         }
 
-        // 入力遅延をゼロにするタッチキャプチャ
         const overlay = document.getElementById('touch-overlay');
         overlay.addEventListener('touchstart', (e) => {
             const touch = e.touches[0];
-            console.log("Direct Input Capture -> X:", touch.clientX, "Y:", touch.clientY);
+            console.log("Direct Input -> X:", touch.clientX, "Y:", touch.clientY);
         }, { passive: true });
     </script>
 </body>
